@@ -44,50 +44,73 @@ float pid_total = 0.0;
 
 float calcular_pid(float temp_actual) {
     unsigned long tiempo = millis();
-    float dt = (tiempo - tiempo_anterior) / 1000.0;
-    if (dt <= 0 || dt > 1.0) dt = PERIODO_MS / 1000.0;
     
+    // Calculo el tiempo transcurrido en segundos
+    float dt = (tiempo - tiempo_anterior) / 1000.0;
+    
+    // Si es la primera vez o el tiempo es inválido, uso el período normal
+    if (tiempo_anterior == 0 || dt <= 0 || dt > 1.0) {
+        dt = PERIODO_MS / 1000.0;
+    }
+    
+    // Calculo el error
     pid_error = SETPOINT - temp_actual;
     float error_abs = (pid_error < 0) ? -pid_error : pid_error;
     
-    // Término P
+    // Término P: proporcional al error
     pid_p = KP * pid_error;
     
-    // Término D
-    float cambio = temp_anterior - temp_actual;
-    pid_d = KD * (cambio / dt);
+    // Término D: calculo sobre la temperatura (no el error) para evitar "derivative kick"
+    float cambio_temp = temp_anterior - temp_actual;
+    pid_d = KD * (cambio_temp / dt);
+    
+    // Limito el derivativo para evitar valores extremos
     if (pid_d > 50.0) pid_d = 50.0;
     if (pid_d < -50.0) pid_d = -50.0;
     
-    // Término I con anti-windup simplificado
+    // Calculo salida temporal para verificar saturación (anti-windup)
     float salida_temp = pid_p + (KI * integral) + pid_d;
     
-    // Zona muerta simple
+    // Zona muerta: reduzco acumulación cuando estoy muy cerca del setpoint
     float factor = 1.0;
-    if (error_abs < 0.15) factor = error_abs / 0.15;
-    if (pid_error < 0 && salida_temp > 70.0) factor *= 1.5;
-    
-    // Anti-windup: solo acumulo si no está saturado o ayuda
-    if (salida_temp < 255.0 && salida_temp > 0.0) {
-        integral += pid_error * dt * factor;
-    } else if (salida_temp >= 255.0 && pid_error < 0) {
-        integral += pid_error * dt * 1.2;
-    } else if (salida_temp <= 0.0 && pid_error > 0) {
-        integral += pid_error * dt;
+    if (error_abs < 0.15) {
+        factor = error_abs / 0.15;  // Más cerca = menos acumulación
     }
     
-    // Limito la integral
+    // Si estoy por encima del setpoint y la salida es alta, reduzco más rápido
+    if (pid_error < 0 && salida_temp > 70.0) {
+        factor *= 1.5;
+    }
+    
+    // Anti-windup: solo acumulo la integral si ayuda o no está saturado
+    if (salida_temp < 255.0 && salida_temp > 0.0) {
+        // No saturado: acumulo normalmente con factor de zona muerta
+        integral += pid_error * dt * factor;
+    } else if (salida_temp >= 255.0 && pid_error < 0) {
+        // Saturado pero error negativo: reduzco más rápido
+        integral += pid_error * dt * 1.2;
+    } else if (salida_temp <= 0.0 && pid_error > 0) {
+        // Saturado pero error positivo: aumento
+        integral += pid_error * dt;
+    }
+    // Si está saturado y el error tiene el mismo signo, no acumulo (anti-windup)
+    
+    // Limito la integral para evitar que crezca infinitamente
     if (integral > 15.0) integral = 15.0;
     if (integral < -15.0) integral = -15.0;
     
+    // Término I: multiplico la integral acumulada por KI
     pid_i = KI * integral;
+    
+    // Salida total: sumo los tres términos
     pid_total = pid_p + pid_i + pid_d;
     
-    // Limito la salida PWM
+    // Limito la salida entre 0 y 255 (valores válidos para PWM)
     float salida = pid_total;
     if (salida > 255.0) salida = 255.0;
     if (salida < 0.0) salida = 0.0;
     
+    // Guardo valores para la próxima iteración
     temp_anterior = temp_actual;
     tiempo_anterior = tiempo;
     
