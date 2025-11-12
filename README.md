@@ -58,7 +58,7 @@ float temp = ((adc * 5.0 / 1024.0) - 0.5) * 100.0;
 ## Configuración de SerialPlot
 
 ### Configuración Básica
-1. **Puerto**: COM0 (o el de SimulIDE)
+1. **Puerto**: COM1 (y COM0 en el de SimulIDE)
 2. **Baudrate**: 9600
 3. **Formato**: ASCII
 4. **Delimitador**: `,` (coma)
